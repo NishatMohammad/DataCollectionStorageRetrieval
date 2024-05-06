@@ -1,0 +1,670 @@
+---
+title: "DA5020 Practicum 3"
+author: "Group 1: Nishat Mohammad and Victoria Clendaniel"
+date: 04/09/2024
+output: 
+  html_document: 
+    toc: true
+    toc_float: true
+    code_folding: show
+  pdf_document: 
+    latex_engine: xelatex
+---
+
+
+## Loading Packages  
+```{r loading packages, message=FALSE, warning=FALSE}
+
+library(dplyr)
+library(ggplot2)
+library(tidyr)
+library(e1071)
+library(scales)
+library(caret)
+library(lubridate)
+library(corrplot)
+library(psych)
+library(FNN)
+library(viridis)
+library(Metrics)
+
+```
+
+## CRISP-DM: Business Understanding.  
+
+This report is intended to support the NYC Taxi and Limousine Commission (TLC) in their quest to evaluate their NYC Green Taxi Trip Records, under the scope of cab driver incentivization (tipping). This report aims to answer these questions and provide insight to TLC leadership.  
+
+## 1. CRISP-DM: Data Understanding.  
+
+Load the NYC Green Taxi Trip Records data into a data frame or tibble.
+Data exploration: explore the data to identify any patterns and analyze the relationships between the features and the target variable i.e. tip amount. At a minimum, you should analyze: 1) the distribution, 2) the correlations 3) missing values and 4) outliers — provide supporting visualizations and  explain all your steps.  
+Tip: remember that you have worked with this dataset in your previous assignments. You are free to reuse any code that support your analysis.
+Feature selection: identify the features/variables that are good indicators and should be used to predict the tip amount. Note: this step involves selecting a subset of the features that will be used to build the predictive model. If you decide to omit any features/variables ensure that you briefly state the reason.  
+Feature engineering: (+10 bonus points): create a new feature and analyze its effect on the target variable (e.g. the tip amount). Ensure that you calculate the correlation coefficient and also use visualizations to support your analysis. Summarize your findings and determine if the new feature is a
+good indicator to predict the tip amount. If it is, ensure that you include it in your model. If it is not a good indicator, explain the reason.
+NOTE: If you attempt this bonus question, ensure that you create a meaningful feature (and nothing arbitrary). If you are unable to think about something meaningful, do not become fixated on this. There is another bonus question that you can attempt later in the practicum.  
+
+### 1.1. Loading data.    
+
+```{r loading_data}
+# Load the 2018 data 
+file <- "2018GreenTaxiTripData1.csv"
+tripdata_df <- as.data.frame(read.csv(file))
+
+```
+
+The data 2018 data has been loaded through the csv file using the `read.csv()` function and a data frame has been created in a variable called `tripdata_df`. 
+
+
+### 1.2. Data Exploration.  
+
+```{r data_exploration1}
+# Look at 2018 data
+dimensions <- dim(tripdata_df)
+glimpse(tripdata_df)
+head(tripdata_df)
+str(tripdata_df)
+columns <- c(colnames(tripdata_df))
+summary(tripdata_df)
+
+# Find missing values (NA)
+any(is.na(tripdata_df))
+misin_data <- (colSums(is.na(tripdata_df)))
+misin_data
+tot_misin_data <- sum(misin_data)
+
+```
+
+Details of the trip data for 2018 can be seen in the first 6 rows displayed with head() or the str() or glimpse() functions with output displayed above.    
+ 
+The dimensions of the data is `r paste0('"',dimensions,'"')`.  
+
+The data has the following variables:  
+`r paste0('"',columns,'"')`  
+
+The number of missing values are `r paste0('"',tot_misin_data,'"')`, found in the ehail_fee and trip_type columns. ehail_fee may be removed from the data since it does not contribute valuable contextual information to the data set.  
+
+Now let us explore the data in more detail. From here we will continue to work with the 2018 data.  
+
+### 1.3. Handle missing values transform variable types.   
+
+```{r NA_var_transform}
+# Change int to numeric
+tripdata_df$total_amount <- as.numeric(as.character(tripdata_df$total_amount))
+tripdata_df$fare_amount <- as.numeric(as.character(tripdata_df$fare_amount))
+tripdata_df$PULocationID <- as.numeric(as.character(tripdata_df$PULocationID))
+tripdata_df$DOLocationID <- as.numeric(as.character(tripdata_df$DOLocationID))
+tripdata_df$passenger_count <- as.numeric(as.character(tripdata_df$passenger_count))
+
+
+# Get the column with negative value
+neg_vals <- sapply(tripdata_df, function(i) any(i < 0) )
+neg_vals
+neg_fare_amount <- neg_vals["fare_amount"]
+neg_total_amount <- neg_vals["total_amount"]
+
+(colSums(is.na(tripdata_df)))
+
+# Get rid of the missing values
+tripdata_df$ehail_fee <- NULL
+tripdata_df <- tripdata_df %>%
+  drop_na(trip_type, fare_amount, total_amount) %>%
+  filter(RatecodeID < 7, fare_amount >= 0, extra >= 0, mta_tax >= 0, tip_amount >= 0, improvement_surcharge >= 0,
+         total_amount >= 0)
+(colSums(is.na(tripdata_df)))
+
+# Factor the columns for categorical variables
+paymentstype <- c("Credit card", "Cash", "No charge", "Dispute", 
+                           "Unknown", "Voided trip")
+
+tripdata_df$payment_type <- factor(tripdata_df$payment_type, 
+                                   levels = 1:6, labels = paymentstype)
+tripdata_df$payment_type <- as.numeric(tripdata_df$payment_type)
+
+ratecodeid <- c("Standard rate", "JFK", "Newark",
+                          "Nassau or Westchester", "Negotiated fare",
+                          "Group ride")
+tripdata_df$RatecodeID <- factor(tripdata_df$RatecodeID, 
+                                 levels = 1:6, labels = ratecodeid)
+tripdata_df$RatecodeID <- as.numeric(tripdata_df$RatecodeID)
+
+vendorid <- c("Creative Mobile Technologies,LLC", "VeriFone Inc.")
+tripdata_df$VendorID <- as.numeric(factor(tripdata_df$VendorID, 
+                               levels = 1:2, labels = vendorid))
+
+triptype <- c("Street-hail", "Dispatch")
+tripdata_df$trip_type <- factor(tripdata_df$trip_type, 
+                                levels = 1:2, labels = triptype)
+tripdata_df$trip_type <-as.numeric(tripdata_df$trip_type)
+
+storefwd <- c("N", "Y")
+tripdata_df$store_and_fwd_flag <-ifelse(tripdata_df$store_and_fwd_flag == "N", 1, 
+                               ifelse(tripdata_df$store_and_fwd_flag == "Y", 0, NA))
+
+
+# look at the updates
+dim(tripdata_df)
+str(tripdata_df)
+glimpse(tripdata_df)
+
+```
+In this chunk of code we have cleaned up the missing values in the data, factored the categorical variables (feature encoding), and transformed integer type variables to numeric for further downstream analysis. The updated summary and structure can be viewed above.  
+We have handled some of the missing values, by taking off ehail and store_and_fwd, we have factored the categorical variables. These are essential to enable correlation to be done in the exploratory data analysis sections of our work. Now we will carry out another important step that will be useful before visualizing and correlating of variables which is outlier removal.  
+
+### 1.4.1 Outlier analysis.  
+
+```{r outlier_analysis}
+# Get mean and sd for tip_amount
+tot_tip_mean <- mean(tripdata_df$tip_amount)
+tot_tip_sd <- sd(tripdata_df$tip_amount)
+# Get z score value for tip_amount
+tripdata_df$tot_tip_outlier <- abs((tripdata_df$tip_amount - tot_tip_mean) / tot_tip_sd)
+
+
+# Get mean and sd for trip_distance
+tot_dist_mean <- mean(tripdata_df$trip_distance)
+tot_dist_sd <- sd(tripdata_df$trip_distance)
+
+# Get z score value for trip_distance
+tripdata_df$tot_dist_outlier <- abs((tripdata_df$trip_distance - tot_dist_mean) / tot_dist_sd)
+
+
+# Get outliers in both tip_amount and trip_distance
+tot_tip_outlier <- sum(tripdata_df$tot_tip_outlier > 3)
+tot_dist_outlier <- sum(tripdata_df$tot_dist_outlier > 3)
+
+# Remove outliers from tip_amount
+clean_tripdata_df <- subset(tripdata_df, tot_tip_outlier <= 3)
+str(clean_tripdata_df)
+
+# Get the total obs after clean up
+rem_rows_tripdata_df <- nrow(clean_tripdata_df)
+
+```
+The number of Outliers in trip_amount are: `r paste0('"',tot_tip_outlier,'"')`.  
+
+The number of Outliers in trip_distance are: `r paste0('"',tot_dist_outlier,'"')`.  
+
+### 1.4.2 Visualize.  
+
+```{r oultier_removal}
+#Remove trip_distance outliers
+new_clean_tripdata_df <- subset(clean_tripdata_df, tot_dist_outlier <= 3)
+
+plot_without_outliers<- ggplot(data = new_clean_tripdata_df, aes(x = payment_type, fill = payment_type, y = trip_distance, color = payment_type)) +
+  geom_point() +
+  labs(title = "Trip Distance and Payment Type Frequency without outliers",
+       x = "Payment Type", y = "Trip distance") +
+  theme_minimal()
+plot_without_outliers
+
+
+```
+
+Please view the data after the outliers have been removed from the 2018 data in the data above. It looks as though the shorter the trip, the more likely the trip is to have been voided. This phenomenon makes sense, as a voided (meaning termination of the business transaction) trip is likely associated with a premature end, and the distance would be short.On the other side of the spectrum, it appears that longer trips are associated with credit card payments.
+
+The number of trips left after data clean up was done are: `r paste0('"',rem_rows_tripdata_df,'"')`.  
+
+
+```{r }
+# Visualize trip_distance with histogram
+# Remove the scientific notion from the plot for better readability
+options(scipen=999)
+histog2018 <- ggplot(data = tripdata_df, aes(x = trip_distance)) +
+  geom_histogram(na.rm = TRUE,bins = 20, fill = "pink", color = "blue") +
+  labs(title = "Distribution of Trip Distances in Feb 2018", x = "Trip Distance",
+       y = "Frequency (log scale)") +
+  scale_y_log10() +
+  theme_minimal()
+histog2018
+
+# Get skewness
+skewness<- skewness(tripdata_df$trip_distance, na.rm = TRUE)
+
+# Look at the possibilities
+if (skewness > 0) {
+  cat("\n, Positively skewed data with tail to the right.")
+} else if (skewness < 0) {
+  cat("\n, Negatively skewed data with tail to the left.")
+} else {
+  cat("\n, Symmetric data.\n")
+}
+
+# Histogram for tip_amount before data cleaning
+ggplot(tripdata_df, aes(x = tip_amount)) +
+  geom_histogram(color = 'black', fill = 'purple', bins = 35, binwidth = 4, alpha = 0.7) +
+  labs(title = "Histogram of the distribution of Tip Amount", x = "Tip Amount", y = "Frequency") +
+  scale_y_log10() +
+  theme_minimal() +
+  theme(axis.text = element_text(size = 10), 
+        axis.title = element_text(size = 12, face = "bold"),
+        plot.title = element_text(size = 14, face = "bold", hjust = 0.5))
+
+```
+
+Here we can see the distribution of the trip amount and trip distance with colored histograms.  
+
+### 1.5. Distribution of variables.  
+
+```{r Dist1}
+ggplot(tripdata_df, aes(VendorID)) +
+  geom_bar(fill = "blue") +
+  labs(title = "Distribution of VendorID") +
+  theme_minimal()
+
+```
+
+Vendor ID 2 occurs more frequently than Vendor ID 1.  
+
+```{r Dist2}
+ggplot(tripdata_df, aes(store_and_fwd_flag)) +
+  geom_bar(fill = "lightblue") +
+  labs(title = "Distribution of store_and_fwd_flag") +
+  theme_minimal()
+
+```
+
+It seems that the Y value in this data has a zero value, it was probably omitted while recording the data.  
+
+```{r Dist3}
+ggplot(tripdata_df, aes(passenger_count)) +
+  geom_bar(fill = "navyblue") +
+  labs(title = "Distribution of Passenger Count") +
+  scale_x_continuous(breaks = seq(0, 9, 1)) +
+  theme_minimal()
+
+```
+
+This graph shows single passenger taxi rides are the highest frequency, with 2 passenger taxi rides being the second most common, but at a substantially lower frequency. 4 person taxi rides is the lowest frequency.  
+
+```{r Dist4}
+ggplot(tripdata_df, aes(payment_type)) +
+  geom_bar(fill = "pink") +
+  labs(title = "Distribution of Payment Types ") +
+  theme_minimal()
+
+```
+
+This plot shows the frequency of 5 payments types usage to pay taxi fare. According to this visualization, the credit card is the most popular and cash is the second most common payment method.  
+
+```{r Dist5}
+ggplot(tripdata_df, aes(trip_type)) +
+  geom_bar(fill = "purple") +
+  labs(title = "Distribution of Trip Types") +
+  theme_minimal()
+
+```
+
+The plot shows street hail is the most popular form of trip type.  
+
+```{r Dist6}
+ggplot(tripdata_df, aes(x = PULocationID)) +
+  geom_histogram(bins = 10, fill = "violet") +
+  labs(title = "Distribution of PULocationID") +
+  scale_x_continuous(breaks = seq(min(tripdata_df$PULocationID), max(tripdata_df$PULocationID), 25)) +
+  theme_minimal()
+
+```
+
+This variable is left skewed.  
+
+```{r Dist7}
+ggplot(tripdata_df, aes(x = DOLocationID)) +
+  geom_histogram(bins = 10, fill = "red") +
+  labs(title = "Distribution of DOLocationID") +
+  scale_x_continuous(breaks = seq(min(tripdata_df$DOLocationID), max(tripdata_df$DOLocationID), 25)) +
+  theme_minimal()
+
+```
+This variable is randomly distributed.  
+
+
+```{r Dist8}
+ggplot(tripdata_df, aes(x = extra)) +
+  geom_histogram(bins = 30, fill = "darkred") +
+  labs(title = "Distribution of Extra Charges") +
+  scale_x_continuous(breaks = seq(-3.0, 3.0, 0.5)) +
+  geom_bar() +
+  theme_minimal()
+# cat("From the above plot, it can be observed that the additional charge (extra) is very nominal.\n")
+
+```
+
+The graph shows that lots of extra charges are taken from cab users, the data dictionary identifies these charges are in relation to $1 or \$0.50 rush hour charges, as well as overnight charges for late trips.  
+
+```{r Dist9}
+ggplot(tripdata_df, aes(x = mta_tax)) +
+  geom_histogram(bins = 10, fill = "yellow") +
+  labs(title = "Distribution of MTA Tax ") +
+  scale_x_continuous(breaks = seq(min(tripdata_df$mta_tax), max(tripdata_df$mta_tax), 0.5)) +
+  theme_minimal()
+
+```
+Most cabs pay MTA tax of $0.5 per ride.  
+
+```{r Dist10}
+ggplot(tripdata_df, aes(x = tolls_amount)) +
+  geom_histogram(bins = 50, fill = "brown") +
+  labs(title = "Distribution of Tolls Amount") +
+  scale_x_continuous(breaks = seq(min(tripdata_df$tolls_amount), max(tripdata_df$tolls_amount), 120)) +
+  scale_y_log10() +
+  theme_minimal()
+
+```
+
+This variable is also skewed to the left.  
+
+```{r Dist11}
+ggplot(tripdata_df, aes(x = improvement_surcharge)) +
+  geom_histogram(fill = "lightgreen") +
+  labs(title = "Distribution of Improvement Surcharge") +
+  scale_x_continuous(breaks = seq(min(tripdata_df$improvement_surcharge), max(tripdata_df$improvement_surcharge), 0.3)) +
+  scale_y_log10() +
+  theme_minimal()
+
+```
+
+The Graph shows surcharge is mostly around 0.3. Consultation with the data dictionary shows that these surcharges are triggered based on hailed trips at the flag drop.  
+
+```{r Dist12}
+ggplot(tripdata_df, aes(x = fare_amount)) +
+  geom_histogram(bins = 30, fill = "green") +
+  labs(title = "Distribution of Fare Amount") +
+  geom_vline(aes(xintercept = mean(fare_amount, na.rm = TRUE)), color ="black",linetype= "dashed", size = 1) +
+  scale_x_log10() +
+  theme_minimal()
+
+```
+
+This visualization was made possible by transforming this variable to numeric type, which enabled us to look at the distribution through the ggplot2 package.This variable is mostly normally distributed, but has a slight skew to the left.  
+
+```{r Dist13}
+ggplot(tripdata_df, aes(x = total_amount)) +
+  geom_histogram(bins = 30, fill = "darkgreen") +
+  labs(title = "Distribution of Total Amount") +
+  geom_vline(aes(xintercept = mean(tripdata_df$total_amount, na.rm = TRUE)), color = "black",linetype = "dashed", size = 1) +
+  scale_x_log10() +
+  theme_minimal()
+
+```
+
+This visualization was made possible by transforming this variable to numeric type, which enabled us to look at the distribution through ggplot2 package.  This variable is mostly normally distributed, but has a slight skew to the left.
+
+
+```{r Dist14}
+ggplot(tripdata_df, aes(x = tip_amount)) +
+  geom_histogram(bins = 30, fill = "darkgreen") +
+  labs(title = "Distribution of Tip Amount") +
+  geom_vline(aes(xintercept = mean(tripdata_df$tip_amount, na.rm = TRUE)), color = "black", linetype = "dashed", size = 1) +
+  scale_x_log10() +
+  theme_minimal()
+
+```
+
+This variable is skewed to the right.  
+The date columns will not be visualized as we do not consider them of much importance for this analysis.  
+
+
+### 1.6. Variable correlation.  
+
+```{r corr}
+str(tripdata_df)
+
+# Variables for correlation
+vars4cor <- clean_tripdata_df %>%
+  select(-lpep_pickup_datetime, -lpep_dropoff_datetime, -tot_tip_outlier, -tot_dist_outlier)
+
+# Displaying the correlation matrix for all variables
+cor(vars4cor)
+
+# Correlation matrix to see the relation of tip_amount with other variables
+cor(vars4cor, vars4cor$tip_amount)
+
+
+```
+From the correlation matrix, we compare trip amount with other variables:  
+Negative correlation is seen with VendorID, RatecodeID, payment_type, trip_type.  
+The rest of the variables are positively correlated to trip amount.  
+The highest correlation between trip amount is total amount followed by trip distance and fare amount.  
+
+### 1.7. Feature Selection.  
+
+```{r select_fxs}
+str(tripdata_df)
+data2model <- tripdata_df[,1:18]
+model <- lm(tip_amount ~ VendorID + store_and_fwd_flag + RatecodeID +
+              PULocationID + DOLocationID + passenger_count +
+              trip_distance + fare_amount + extra + mta_tax +
+              tolls_amount + improvement_surcharge + total_amount +
+              payment_type + trip_type, data = tripdata_df)
+summary(model)
+
+# Remove store_and_fwd_flag
+model2 <- lm(tip_amount ~ VendorID + RatecodeID +
+              PULocationID + DOLocationID + passenger_count +
+              trip_distance + fare_amount + extra + mta_tax +
+              tolls_amount + improvement_surcharge + total_amount +
+              payment_type + trip_type, data = tripdata_df)
+summary(model2)
+
+```
+
+Here features are selected based on a backward feature selection method via regression modeling. model2 was made by removing `store_and_fwd_flag` which had a high p-value of greater than 0.1. This model looks great with all features with very low p values indicating high significance. r squared and adjusted R squared are both great at 0.9851 and the F statistic is 4.949e+06 on 14 and 1045984 DF.  
+
+### 1.8. Feature Engineering.  
+
+```{r fx_eng}
+nw_trip2018dt <- tripdata_df[1:18]
+# Converting date and time columns to appropriate type
+nw_trip2018dt$lpep_pickup_datetime <- mdy_hm(nw_trip2018dt$lpep_pickup_datetime)
+nw_trip2018dt$lpep_dropoff_datetime <- mdy_hm(nw_trip2018dt$lpep_dropoff_datetime)
+
+# Engineer trip length
+nw_trip2018dt <- nw_trip2018dt %>%
+  mutate(trip_length = as.numeric(lpep_dropoff_datetime - lpep_pickup_datetime) / 60)
+str(nw_trip2018dt)
+summary(nw_trip2018dt)
+head(nw_trip2018dt)
+
+```
+
+Here we have created a new feature called trip_length relying on the data in the lpep_pickup_datetime and the lpep_dropoff_datetime variables to determine how long the trip was in minutes.  
+
+### 1.9. Cross check for any issues and visualize new feature.  
+
+```{r data_exp2}
+# missing values
+any(is.na(nw_trip2018dt))
+
+# outliers in trip_length
+ggplot(nw_trip2018dt, aes(x = trip_length)) +
+  geom_histogram(bins = 30, color = "black", fill = "pink", alpha = 0.7) +
+  labs(title = "Distribution of the length of time of the trip",
+       x = "Trip Length (minutes)",
+       y = "Frequency (count)") +
+  scale_x_log10() +
+  theme_minimal()
+
+# Correlation with trip amount
+cor_trip_length <- cor(nw_trip2018dt$trip_length, nw_trip2018dt$tip_amount)
+cor_trip_length
+
+# Visualize trip length with respect to trip amount
+nw_trip2018dt %>%
+  ggplot(aes(x = trip_length, y = tip_amount)) +
+  geom_point(color = "pink", alpha = 0.7) +
+  labs(title = "Trip length and Amount",
+       x = "Trip Duration(length) (minutes)",
+       y = "Tip Amount") +
+  theme_minimal()
+```
+The trip length shows poor correlation with tip amount and with correlation coefficient of `r cor_trip_length`.  This has been visualized with the scatter plot that can be seen above.  
+
+
+## Question 2 — (20 points).  
+
+CRISP-DM: Data Preparation
+Prepare the data for the modeling phase and handle any issues that were identified during the exploratory data analysis. At a minimum, ensure that you:  
+Preprocess the data: handle missing data and outliers, perform any suitable data transformation steps, etc. Also, ensure that you filter the data. The goal is to predict the tip amount, therefore you need to ensure that you extract the data that contains this information. Hint: read the data dictionary.  
+Normalize the data: perform either max-min normalization or z-score standardization on the continuous variables/features.  
+Encode the data: determine if there are any categorical variables that need to be encoded and perform the encoding.  
+Prepare the data for modeling: shuffle the data and split it into training and test sets. The percent split between the training and test set is your decision. However, clearly indicate the reason.  
+
+## 2.1. Feature selection.   
+
+Outliers, missing values, feature encoding, and feature transformation steps have already been carried out in the data exploration section above to ensure a good correlation matrix with reliable coefficients was obtained and the details discussed above. We will look into the important features and take off some we feel are not important. Having created the trip length we will take of the 2 date columns, and learning from the correlation that the store_and_fwd_flag has a high p value, these three variables will be taken off from the data.   
+
+```{r select_features}
+filtered_dt <- nw_trip2018dt %>% 
+  select(-lpep_pickup_datetime, -lpep_dropoff_datetime, -store_and_fwd_flag)
+str(filtered_dt)
+
+
+```
+
+Here the new data is seen above, with all numeric variables, and categorical vars factored.  
+
+### 2.2. Data Normalization.  
+
+```{r data_norm}
+# Normalize continuous vars
+working_dt <- preProcess(as.data.frame(filtered_dt), method = c("range"))
+normalyzd_dt <- predict(working_dt, as.data.frame(filtered_dt))
+normalyzd_dt$id <- 1:nrow(normalyzd_dt)
+
+```
+
+### 2.3. Data Splitting.  
+
+```{r dt_split}
+# Get 70% of the data for training set
+training_set <- normalyzd_dt %>% sample_frac(0.7)
+dim(training_set)
+
+# Get the remainder for testing set
+testing_set <- anti_join(normalyzd_dt, training_set, by = 'id')
+dim(testing_set)
+
+```
+
+Here we determine our training and testing sets by splitting the data using a 70:30 ratio respectively.   
+
+
+## Question 3 — (30 points).  
+
+CRISP-DM: Modeling  
+In this step you will develop the k-nn regression model. Create a function with the following name and arguments: knn.predict(data_train, data_test, k);  
+
+data_train represents the observations in the training set,
+data_test represents the observations from the test set, and
+k is the selected value of k (i.e. the number of neighbors).
+Perform the following logic inside the function:  
+
+Implement the k-nn algorithm and use it to predict the tip amount for each observation in the test set i.e. data_test.
+Note: You are not required to implement the k-nn algorithm from scratch. Therefore, this step may only involve providing the training set, the test set, and the value of k to your chosen k-nn library.
+Calculate the mean squared error (MSE) between the predictions from the k-nn model and the actual tip amount in the test set.
+The knn-predict() function should return the MSE.  
+
+### Answers:  
+```{r Get_MSE_knn_function}
+# Get MSE after modeling
+knn.predict <- function(training_dt, testing_dt, k) {
+  # fit model
+  knn_model <- FNN::knn.reg(train = training_dt,
+                            test = testing_dt,
+                            y = training_dt,
+                            k = k)
+  # Predictions
+  y_pred <- knn_model$pred
+  # True values in test data
+  y_test <- testing_dt[, 10]
+  # MSE
+  mse <- mean((y_test - y_pred)^2)
+  return(mse)
+}
+
+# Get mse for our data
+MSE <- knn.predict(training_set, testing_set, 5)
+MSE
+```
+
+The MSE for our knn model is `r MSE` given a k value of 5.  This value can be fluctuated to reduce this error in order to get the best knn model. This will be done in subsequent sections.  
+
+
+## Question 4 — (30 points).  
+
+CRISP-DM: Evaluation
+Determine the best value of k and visualize the MSE. This step requires selecting different values of k and evaluating which produced the lowest MSE. At a minimum, ensure that you perform the following:  
+
+Provide at least 20 different values of k to the knn.predict() function (along with the training set and the test set).
+Tip: use a loop! Use a loop to call knn.predict() 20 times and in each iteration of the loop, provide a different value of k to knn.predict(). Ensure that you save the MSE that’s returned.  
+Create a line chart and plot each value of k on the x-axis and the corresponding MSE on the y-axis. Explain the chart and determine which value of k is more suitable and why.  
+What are your thoughts on the model that you developed and the accuracy of its predictions? Would you advocate for its use to predict the tip amount of future trips? Explain your answer.  
+
+### Answers:  
+```{r Q4}
+# Create a loop to test 20 different values of k
+
+k_MSE_screen <- c()
+k_values <- c(1, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20)
+
+for (k in k_values) {
+k_screen <- knn.predict(training_set, testing_set, k)
+
+k_MSE_screen <- c(k_MSE_screen, k_screen)
+
+cat(k,'=', k_screen, "\n")
+}
+
+
+```
+Above you will see the constructed for loop which utilizes the custom argument made in the previous question to assess the different K values. Now we will take this data and visualize it on a line graph for better understanding of the optimal k value.  
+
+```{r Q4 Visualization}
+# Now visualize the k MSE optimization data via a line chart
+k_MSE_screen <- data.frame(k_values, k_MSE_screen)
+k_MSE_screen
+
+ggplot(k_MSE_screen, aes(x = k_values, y = k_MSE_screen)) + geom_line(color = "red") + geom_point(color = "black") + theme_minimal() + labs(title = "K Optimization with Mean Squared Error", x = "K Values", y = "Mean Squared Error (MSE)")
+
+```
+In the above code you can see a line chart of the K values which were assessed. It appears that the best k value would be 4, which has an MSE of  0.7352729. This is because it is located in the optimal elbow region, after which the change in MSE exhibits a reduction. You can visualize the trend of adding k values in the line chart shown above. Based on this information, we think the current MSE of 0.75 is acceptable in providing helpful information to taxi drivers in predicting tip amounts and aiding in incentivization. We would recommend to TLC to perform further analysis including root mean squared analysis (RMSA), and mean absolute error (MAE), and adjusted R squared to increase confidence in this model. This would further increase the understanding of the model. However, this is outside the scope of this practicum.   
+
+ 
+## Question 5 — (10 optional/bonus points).  
+
+In this optional (bonus) question, you can: 1) use your intuition to create a compelling visualization that tells an informative story about one aspect of the data set OR 2) optimize the k-nn model and evaluate the effect of the percentage split, between the training and test set, on the MSE. Choose ONE of the following:    
+
+Create a compelling visualization that tells an informative story about how these cabs are used.  
+OR  
+Evaluate the effect of the percentage split for the training and test sets and determine if a different split ratio improves your model’s ability to make better predictions.  
+
+### Answers:  
+```{r Q5}
+# Now we will try an alternative split on the data set with a 80:20 split instead of the 70:30 split we used in the assignment.
+
+training_set2 <- normalyzd_dt %>% sample_frac(0.8)
+
+# Get the remainder for testing set
+testing_set2 <- anti_join(normalyzd_dt, training_set, by = 'id')
+
+MSE2 <- knn.predict(training_set2, testing_set2, 5)
+MSE2
+
+# Now we will try an alternative split on the data set with a 60:40 split instead of the 70:30 split we used in the assignment.
+
+training_set3 <- normalyzd_dt %>% sample_frac(0.8)
+
+
+# Get the remainder for testing set
+testing_set3 <- anti_join(normalyzd_dt, training_set, by = 'id')
+
+MSE3 <- knn.predict(training_set3, testing_set3, 5)
+MSE3
+
+```
+If you recall, the 70:30 split we used in our assignment with a k value of 5 yielded an MSE of 0.7263093. Now, we can see that a 80:20 split yields a MSE of .7308085, which is a slightly higher error rate. Personally, we find this surprising because you would presume that more training material would yield more accurate results on the test material. A 60:40 split yielded an MSE of .7306863, which is still a larger error than the 70:30 split. From this information, we can rest assured that the decision to use the 70:30 split for the report was the best decision for the least MSE.   
+
+## Conclusion:  
+
+This report successfully follows the CRISP-DM workflow. We believe that the model built can help TLC have a better understanding of their data set, generating a new feature, and predictors of tip amount for the purpose incentivizing their taxi drivers.  
