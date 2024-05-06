@@ -1,0 +1,130 @@
+---
+title: Practicum_Group1_DA5020
+author: "Nishat Mohammad, Victoria Clendaniel"
+date: 01/31/2024
+output: 
+  pdf_document: 
+    latex_engine: xelatex
+  html_document: 
+    toc: true
+    toc_float: true
+    code_folding: show
+---
+
+
+## Part 1
+### Question 1.  
+Create a dataframe with 4 variables. The 4 variables should be doctor_type, doctor_lastname, location, AVG_Rating .
+The variable doctor_type should contain 4 inputs (PCP, Psychiatrist, Surgeon, Anesthesia)
+The variable doctor_lastname should contain 4 inputs (Smith, Dame, Jones, Zayas)
+The variable location should contain 4 inputs (MA, ME, NH, VT)
+The variable AVG_Rating should contain 4 inputs (7,9,8,9)
+Print the dataframe and include a screenshot
+
+```{r}
+doctor_type <- c("PCP", "Psychiatrist", "Surgeon", "Anesthesia")
+doctor_lastname <- c("Smith", "Dame", "Jones", "Zayas")
+location <- c("MA", "ME", "NH", "VT")
+AVG_Rating <- c(7, 9, 8, 9)
+
+q1_df <- data.frame(doctor_type, doctor_lastname, location, AVG_Rating)
+q1_df
+```
+
+### Question 2.  
+Using the dataframe above...
+Select row 1 in column 2, what was selected?
+Select rows 2 through 4, what was selected?
+Select the last column, what was selected?
+```{r}
+a <- q1_df[1,2]
+b <- q1_df[2:4,]
+c <- q1_df[,4]
+```
+Question 2 answer: 
+When selecting row 1 in column 2, the result is `r paste0('"',a, '"')` from the column doctor_lastname. When selecting rows 2-4 from the dataframe, the result is `r paste0('"',b,'"')`, where we can see that the first row is excluded. When selecting the last column, the output is all values for the last column AVG_Rating:  `r paste0('"',c, '"')`.
+
+### Question 3.  
+Using the dataset Mtcars create a scatter plot showing the relations between any two variables of your choosing. Explain why you picked those variables. Each point should also be based on a color scheme of your choosing.
+```{r}
+library(dplyr)
+library(ggplot2)
+data(mtcars) 
+  ggplot(mtcars, aes(x = wt, y = qsec, color = cyl)) + geom_point() +labs(title = "Relationship between wt and qsec", caption = "Purpose: To illustrate the relationship between car weight and time to travel .25 miles in seconds.") + theme_classic()
+```
+Question 3 Answer:
+This scatterplot shows the relationship between car weight, and the time taken to travel .25 miles, colored by the number of cylinders per vehicle. We believed it would be interesting to see how the weight of the car would effect the time taken to travel .25 miles. In addition, it would be useful to see if there is a general trend in the number of cylinders for these vehicles. According to a visual inspection of the scatter plot, it seems that as the weight of the vehicle increases, the number of cylinders increases. Another interesting observation is that there are more cars with a higher number of cylinders that traveled .25 miles in ~18 seconds, regardless of weight. It could be inferred that weight could have a negative effect on the speed and acceleration. But, with a higher number of cylinders, the weight of the car does not have as much leverage, and the increased horsepower from the higher number of cylinders helps the car cross .25 miles faster.
+In addition, at first glance it may be difficult to see if there is a significant relationship between car weight and time to travel .25 miles. In this case, it would be useful to perform a Pearson Coefficient analysis to see how significantly the two variables are correlated.We will attempt to answer this in the next question. 
+
+### Question 4.  
+Using the dataset MTcars perform a summary statistic on the dataset and calculate the pearson coefficient of the correlation R picking two variables of choice. Explain why you picked those variables and explain the purpose of a pearson coefficient.
+```{r}
+summary(mtcars)
+cor(x = mtcars$wt, y = mtcars$qsec, method = "pearson")
+```
+Question 4 answer: 
+We conducted a summary statistical analysis on the dataset. In addition, we calculated the Pearson coefficient of car weight and time to travel .25 miles. This coefficient calculation resulted in a value of -.1747. This would be a very weak negative correlation. An expected hypothesis is that as the weight of the car increases, one may expect that the time to travel .25 miles increases. This is because if the car is heavier, then more power is required to move the same distance. However, that is not what this data is showing. Looking at the previous scatterplot, it is apparent that as the weight of the vehicle increases, the number of cylinders in the car increases, which may aid in preventing the time to travel .25 miles from increasing. Furthermore, the purpose of a pearson coefficient analysis is to answer questions like the one posed for the relationship between these two variables. It helps the analyst determine if there is a linear relationship (correlation) between two variables, and if so, how strong. 
+
+## Part 2
+
+### Question 1.  
+Load the data, directly from the URL, into your R environment.
+```{r}
+library(dplyr)
+library(tidyverse)
+
+NYS_data <- read.csv( "C:/Users/vclen/OneDrive/Documents/Substance_Use_Disorder_Treatment_Program_Admissions.csv")
+NYS_working <- data.frame(NYS_data)
+str(NYS_working)
+glimpse(NYS_working)
+summary(NYS_working)
+
+```
+Question 1 answer:
+The data file was not easily parsed using the xml html provided in the Practicum 1 assignment on Canvas. Instead, we decided to locate the data ourselves on the open-access NY site, and manually export the CSV file and load it into the R environment. Unfortunately, the API html csv file only contained data from 2007, and was therefore unsuitable to use in the Practicum.
+
+### Question 2. 
+Evaluate the dataset to determine what data preparation steps are needed and perform them. At a minimum, ensure that you discuss the distribution of the data, outliers and prepare any helpful summary statistics to support your analysis.
+```{r}
+head(NYS_working, n = 10)
+summary(NYS_working)
+
+NYS_working %>% distinct(.keep_all = TRUE)
+
+NYS_working <- NYS_working %>%
+  mutate(
+  year_f = as.factor(as.character(NYS_working$Year)),
+  program_category_f = as.factor(NYS_working$Program.Category),
+  service_type_f = as.factor(NYS_working$Service.Type),
+  age_group_f = as.factor(NYS_working$Age.Group),
+  primary_substance_group_f = as.factor(NYS_working$Primary.Substance.Group)
+  )
+str(NYS_working)
+
+
+```
+```{r}
+library(ggplot2)
+
+ggplot(NYS_working, aes(x = Admissions)) + geom_histogram() +labs(title = "Number of Admissions", caption = "Purpose: To demonstrate the general distribution of admissions in this dataset, including outliers") + theme_classic()
+
+
+NYS_admissions <- NYS_working %>%
+  summarize(
+    max_admissions = max(Admissions),
+    sd_admissions = sd(Admissions, na.rm = TRUE),
+    mean_admissions = mean(Admissions, na.rm = TRUE),
+    filter(NYS_working, Admissions < (mean(Admissions)) + 3 * sd(Admissions)
+           & Admissions > (mean(Admissions)) - 3 * sd(Admissions))
+  ) 
+
+  ggplot(NYS_admissions, aes(x = Admissions)) + geom_histogram() + labs(title = "Number of Admissions, Outliers Removed", caption = "Purpose: To show the distribution of the admissions data following cleanup (removal of outliers beyond 3 standard deviations") + theme_classic() 
+  
+  ggplot(NYS_admissions, aes(x = year_f, y = Admissions)) + geom_col() + facet_wrap(~primary_substance_group_f) + labs(title = "Number of Admissions, per Substance Type Per Year", caption = "Purpose: To show the number of admissions for each substance type per year") + theme_classic() + theme(axis.text.x = element_text(angle = 60, vjust = 1, hjust = 1, size = 8))
+```
+
+Question 2 answer:
+We decided that there are a number of character/text variables that should actually be factors, because they are categorical in nature. This was determined after consulting both the data dictionary as well looking at the structure within the dataframe. Such variables include age_group, program_category,primary_substance_group and service type. We also created a new column which turned year into a factor in order to aid in further downstream analysis. For the identification of data which ranges outside of the norm, we inspected the admissions data as a potential source of outliers. As you can see between the two ggplots that were constructed, before the filtering of outliers we could see an outlier which contained well over 1500 admissions. After filtering out outliers of more than 3 standard deviations, the data is distributed better on the graph.In addition, just to understand and get to know the data a bit better we also plotted the number of admissions per substance type per year.
+
+
+
